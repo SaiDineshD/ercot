@@ -1,0 +1,5 @@
+# requirements.txt
+# Python dependencies for the Ingest-Grid-Service will be listed here.
+requests
+python-dotenv
+kafka-python-ng # Using the 'ng' fork for better compatibility

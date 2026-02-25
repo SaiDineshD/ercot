@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual envs
+venv/
+env/
+envingestgrid/
+.venv/
+services/ingest-grid-service/envingestgrid/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / outputs (optional - remove if you want to track)
+*.csv
+*.parquet
+*.pkl
+*.pickle

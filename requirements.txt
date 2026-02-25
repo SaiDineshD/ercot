@@ -1,0 +1,2 @@
+# Root requirements - for Colab / quick install
+-r models/requirements.txt
