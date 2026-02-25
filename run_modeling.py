@@ -3,7 +3,7 @@
 import sys
 sys.path.insert(0, '.')
 import os
-os.environ['PYTHONUNBUFFERED'] = '1'
+os.environ.setdefault('PYTHONUNBUFFERED', '1')
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ from models.data_pipeline import (
 from models.gnn_forecaster import train_gnn_forecaster, predict_gnn
 from models.gnn_anomaly import train_gnn_ae, detect_anomalies_gnn
 
-EIA_API_KEY = "2lXNIsctfqwa8zfH03rDca3IXcLnjgfN5dwUnsM4"
+EIA_API_KEY = os.environ.get("EIA_API_KEY", "YOUR_EIA_API_KEY")  # Set env or replace
 USE_SYNTHETIC = False  # True = synthetic; False = real EIA + Open-Meteo
 
 def main():
