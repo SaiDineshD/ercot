@@ -4,10 +4,9 @@ Real-time demand forecasting and anomaly detection for the Texas ERCOT electrici
 
 ## Quick Start (Google Colab)
 
-1. Create a GitHub repo and push this project (see [GITHUB_SETUP.md](GITHUB_SETUP.md))
-2. Open in Colab: `https://colab.research.google.com/github/YOUR_USERNAME/ercot-market-intelligence/blob/main/ercot_colab.ipynb`
-3. Add your [EIA API key](https://www.eia.gov/opendata/) (paste in notebook or use Colab Secrets)
-4. Run all cells
+1. Open in Colab: `https://colab.research.google.com/github/YOUR_USERNAME/ercot-market-intelligence/blob/main/ercot_colab.ipynb`
+2. Add your [EIA API key](https://www.eia.gov/opendata/) (paste in notebook or use Colab Secrets)
+3. Run all cells
 
 ## Local Setup
 
