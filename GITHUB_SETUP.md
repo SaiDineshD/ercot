@@ -10,7 +10,6 @@
 ## 2. Push from your machine
 
 ```bash
-cd "/Users/SaiDinesh/Documents/market intelligence"
 
 # Add your GitHub repo as remote (replace YOUR_USERNAME with your GitHub username)
 git remote add origin https://github.com/YOUR_USERNAME/ercot-market-intelligence.git
