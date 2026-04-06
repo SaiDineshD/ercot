@@ -12,6 +12,14 @@ Real-time grid monitoring, **GNN + XGBoost** load and settlement-point **price f
 | **API** | FastAPI model server: forecasts, anomalies, alerts, outages, grid status |
 | **Dashboard** | Streamlit: KPIs, charts, alert banner, model comparison, optional alert acknowledge |
 
+### Quick try in Google Colab
+
+1. Open in Colab: [open `ercot_colab.ipynb` from this repo](https://colab.research.google.com/github/SaiDineshD/ercot/blob/main/ercot_colab.ipynb) (replace with your fork URL if you cloned elsewhere).
+2. Add your [EIA API key](https://www.eia.gov/opendata/) (paste in the notebook or use Colab Secrets).
+3. Run all cells.
+
+See **[GITHUB_SETUP.md](GITHUB_SETUP.md)** for GitHub + Colab secrets setup.
+
 ## Architecture
 
 ```mermaid
