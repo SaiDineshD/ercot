@@ -1,42 +1,20 @@
 """
-GNN-based Demand Forecaster for ERCOT
-Uses a variable graph (nodes = load, wind, solar, temp, etc.) with temporal modeling.
-Architecture: Graph Convolution over variables + Temporal LSTM/Conv.
+GNN-based Price Forecaster for ERCOT
+Same variable-graph + LSTM architecture as load forecaster but uses Huber loss
+for robustness against price spikes.
 """
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 
-
-class VariableGraphConv(nn.Module):
-    """Graph convolution over variable dimension. Adjacency = correlation or learned."""
-
-    def __init__(self, in_dim: int, out_dim: int, adj: np.ndarray):
-        super().__init__()
-        adj = np.asarray(adj, dtype=np.float64)
-        adj = np.nan_to_num(adj, nan=0.0, posinf=0.0, neginf=0.0)
-        np.fill_diagonal(adj, 1.0)
-        self.adj = torch.tensor(adj, dtype=torch.float32)
-        self.W = nn.Linear(in_dim * 2, out_dim)  # concat self + neighbor agg
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq, num_vars, feat)
-        batch, seq, n, f = x.shape
-        adj = self.adj.to(x.device)
-        adj_norm = adj / (adj.sum(dim=1, keepdim=True) + 1e-8)
-        agg = torch.einsum("ij,bsjf->bsif", adj_norm, x)
-        combined = torch.cat([x, agg], dim=-1)
-        return self.W(combined)
+from .gnn_forecaster import VariableGraphConv
 
 
-class ERCOTGNNForecaster(nn.Module):
-    """
-    GNN + Temporal model for load forecasting.
-    - Variable graph: nodes = features (load, wind, temp, ...), edges from correlation
-    - Temporal: LSTM over sequence
-    """
+class ERCOTPriceForecaster(nn.Module):
+    """GNN + LSTM for settlement point price forecasting."""
 
     def __init__(
         self,
@@ -61,19 +39,52 @@ class ERCOTGNNForecaster(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch, seq_len, num_vars)
         batch, seq, n = x.shape
-        x = x.unsqueeze(-1)  # (batch, seq, n, 1)
-        h = self.gcn1(x)
-        h = torch.relu(h)
-        h = self.gcn2(h)
-        h = torch.relu(h)
+        x = x.unsqueeze(-1)
+        h = torch.relu(self.gcn1(x))
+        h = torch.relu(self.gcn2(h))
         h = h.reshape(batch, seq, -1)
         out, _ = self.lstm(h)
         return self.fc(out[:, -1, :])
 
 
-def _eval_loss(
+def get_price_features() -> list:
+    """Feature columns for price forecasting."""
+    return [
+        "price_usd_mwh",
+        "load_mw",
+        "temperature_2m",
+        "wind_speed_10m",
+        "direct_radiation",
+        "hour",
+        "day_of_week",
+        "is_weekend",
+        "hour_sin",
+        "hour_cos",
+        "price_lag_1h",
+        "price_lag_24h",
+        "price_lag_168h",
+        "price_rolling_24h",
+    ]
+
+
+def engineer_price_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Add price-specific lag and calendar features. Expects columns: price_usd_mwh, load_mw, etc."""
+    df = df.copy()
+    df["hour"] = df.index.hour
+    df["day_of_week"] = df.index.dayofweek
+    df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
+    df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
+    df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
+    df["price_lag_1h"] = df["price_usd_mwh"].shift(1)
+    df["price_lag_24h"] = df["price_usd_mwh"].shift(24)
+    df["price_lag_168h"] = df["price_usd_mwh"].shift(168)
+    df["price_rolling_24h"] = df["price_usd_mwh"].rolling(24, min_periods=1).mean()
+    df["load_lag_1h"] = df["load_mw"].shift(1)
+    return df.dropna()
+
+
+def _eval_price_loss(
     model: nn.Module,
     X: np.ndarray,
     y_norm: np.ndarray,
@@ -93,49 +104,44 @@ def _eval_loss(
     return total / max(n, 1)
 
 
-def train_gnn_forecaster(
+def train_price_forecaster(
     X_train: np.ndarray,
     y_train: np.ndarray,
     adj: np.ndarray,
     X_val: np.ndarray = None,
     y_val: np.ndarray = None,
-    epochs: int = 100,
+    epochs: int = 60,
     batch_size: int = 128,
     lr: float = 1e-3,
     weight_decay: float = 1e-4,
     hidden_dim: int = 64,
     dropout: float = 0.2,
+    huber_delta: float = 2.0,
     patience: int = 12,
-    loss: str = "mse",
-    huber_delta: float = 1.0,
     device: str = None,
 ) -> tuple:
     """
-    Train the GNN forecaster with AdamW, optional Huber loss, validation early stopping.
-    If X_val/y_val provided, restores best weights by validation loss.
-    Returns: (model, train_losses, scale_params) where scale_params = (y_mean, y_std) for unscaling.
+    Train the price forecaster with Huber loss, AdamW, validation early stopping.
+    Returns: (model, losses, scale_params)
     """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     _, seq_len, num_vars = X_train.shape
 
     y_mean, y_std = y_train.mean(), y_train.std()
     y_std = max(y_std, 1e-6)
-    y_train_norm = (y_train - y_mean) / y_std
+    y_norm = (y_train - y_mean) / y_std
     y_val_norm = None
     if X_val is not None and y_val is not None and len(X_val) > 0:
         y_val_norm = (y_val - y_mean) / y_std
 
-    model = ERCOTGNNForecaster(num_vars, seq_len, hidden_dim=hidden_dim, adj=adj, dropout=dropout).to(device)
+    model = ERCOTPriceForecaster(num_vars, seq_len, hidden_dim=hidden_dim, adj=adj, dropout=dropout).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(epochs, 1))
-    if loss == "huber":
-        criterion = nn.HuberLoss(delta=float(huber_delta))
-    else:
-        criterion = nn.MSELoss()
+    criterion = nn.HuberLoss(delta=huber_delta)
 
     ds = TensorDataset(
         torch.tensor(X_train, dtype=torch.float32),
-        torch.tensor(y_train_norm, dtype=torch.float32).unsqueeze(1),
+        torch.tensor(y_norm, dtype=torch.float32).unsqueeze(1),
     )
     loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
 
@@ -151,16 +157,16 @@ def train_gnn_forecaster(
             xb, yb = xb.to(device), yb.to(device)
             opt.zero_grad()
             pred = model(xb)
-            loss_v = criterion(pred, yb)
-            loss_v.backward()
+            loss = criterion(pred, yb)
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             opt.step()
-            total += loss_v.item()
+            total += loss.item()
         scheduler.step()
         losses.append(total / len(loader))
 
         if y_val_norm is not None:
-            val_loss = _eval_loss(model, X_val, y_val_norm, criterion, device, batch_size=batch_size)
+            val_loss = _eval_price_loss(model, X_val, y_val_norm, criterion, device, batch_size=batch_size)
             if val_loss < best_val - 1e-7:
                 best_val = val_loss
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -168,26 +174,26 @@ def train_gnn_forecaster(
             else:
                 stall += 1
             if stall >= patience:
-                print(f"  Epoch {ep+1}/{epochs} train={losses[-1]:.6f} val={val_loss:.6f} (early stop)")
+                print(f"  Price Epoch {ep+1}/{epochs} train={losses[-1]:.6f} val={val_loss:.6f} (early stop)")
                 break
-            if (ep + 1) % 5 == 0 or ep == 0:
-                print(f"  Epoch {ep+1}/{epochs} train={losses[-1]:.6f} val={val_loss:.6f}")
+            if (ep + 1) % 10 == 0 or ep == 0:
+                print(f"  Price Epoch {ep+1}/{epochs} train={losses[-1]:.6f} val={val_loss:.6f}")
         else:
-            if (ep + 1) % 5 == 0 or ep == 0:
-                print(f"  Epoch {ep+1}/{epochs} Loss: {losses[-1]:.6f}")
+            if (ep + 1) % 10 == 0 or ep == 0:
+                print(f"  Price Epoch {ep+1}/{epochs} Loss: {losses[-1]:.6f}")
 
     if best_state is not None:
         model.load_state_dict(best_state)
     return model, losses, (y_mean, y_std)
 
 
-def predict_gnn(
+def predict_price(
     model: nn.Module,
     X: np.ndarray,
     scale_params: tuple = None,
     device: str = None,
 ) -> np.ndarray:
-    """Run inference. Pass scale_params=(y_mean, y_std) to unscale predictions."""
+    """Run price inference. Pass scale_params to unscale."""
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
     with torch.no_grad():

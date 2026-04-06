@@ -1,0 +1,4 @@
+# Local / CI checks (not needed for Colab)
+pytest>=8.0.0
+requests>=2.28.0
+psycopg2-binary>=2.9.9

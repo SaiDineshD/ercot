@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.env
+.git
+.gitignore
+*.ipynb
+notebooks/
+*.html
+*.md
+services/ingest-grid-service/
+venv/
+env/
+.vscode/
+.cursor/
