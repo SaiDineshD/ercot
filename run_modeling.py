@@ -59,7 +59,7 @@ def main():
 
     # 2. Prepare GNN dataset
     print("\n2. Preparing GNN dataset...")
-    X_train, y_train, X_test, y_test, feature_names, adj = prepare_gnn_dataset(
+    X_train, y_train, X_test, y_test, feature_names, adj, scaler_params = prepare_gnn_dataset(
         df_model, target_col='load_mw', seq_len=24, horizon=1, train_ratio=0.85
     )
     print(f"   Train: {X_train.shape}, Test: {X_test.shape}")

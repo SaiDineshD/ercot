@@ -9,7 +9,6 @@ import os
 import logging
 import requests
 import pandas as pd
-import numpy as np
 import psycopg2
 import streamlit as st
 import plotly.graph_objects as go
@@ -108,26 +107,38 @@ c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
 with c1:
     if grid_status and grid_status.get("load"):
         cur = grid_status["load"].get("current_mw")
-        st.metric("Live Load", f"{cur:,.0f} MW" if cur else "N/A")
+        st.metric("Live Load", f"{cur:,.0f} MW" if cur is not None else "—")
     else:
-        st.metric("Live Load", "N/A")
+        _load_df = query_db(
+            "SELECT load_mw FROM grid_load ORDER BY ts DESC LIMIT 1"
+        )
+        if not _load_df.empty and pd.notna(_load_df.iloc[0]["load_mw"]):
+            st.metric("Live Load", f"{_load_df.iloc[0]['load_mw']:,.0f} MW")
+        else:
+            st.metric("Live Load", "—", help="Model server or DB unreachable")
 with c2:
-    val = f"{load_1h['forecast_mw']:,.0f} MW" if load_1h else "N/A"
-    st.metric("GNN 1h", val)
+    if load_1h and load_1h.get("forecast_mw") is not None:
+        st.metric("GNN 1h", f"{load_1h['forecast_mw']:,.0f} MW")
+    else:
+        st.metric("GNN 1h", "—", help="Load model not trained yet")
 with c3:
-    val = f"{load_24h['forecast_mw']:,.0f} MW" if load_24h else "N/A"
-    st.metric("GNN 24h", val)
+    if load_24h and load_24h.get("forecast_mw") is not None:
+        st.metric("GNN 24h", f"{load_24h['forecast_mw']:,.0f} MW")
+    else:
+        st.metric("GNN 24h", "—", help="Load model not trained yet")
 with c4:
-    val = f"${price_1h['forecast_usd_mwh']:.2f}" if price_1h else "N/A"
-    st.metric("Price 1h", val)
+    if price_1h and price_1h.get("forecast_usd_mwh") is not None:
+        st.metric("Price 1h", f"${price_1h['forecast_usd_mwh']:.2f}")
+    else:
+        st.metric("Price 1h", "—", help="Price model not trained yet")
 with c5:
-    if anomaly_data:
+    if anomaly_data and "anomaly_count" in anomaly_data:
         count = anomaly_data["anomaly_count"]
         st.metric("Anomalies", count,
                   delta="ALERT" if count > 0 else "normal",
                   delta_color="inverse" if count > 0 else "normal")
     else:
-        st.metric("Anomalies", "N/A")
+        st.metric("Anomalies", "—", help="Anomaly model not trained yet")
 with c6:
     n_alerts = active_alerts.get("count", 0) if active_alerts else 0
     st.metric("Active Alerts", n_alerts,
@@ -135,7 +146,7 @@ with c6:
               delta_color="inverse" if n_alerts > 0 else "normal")
 with c7:
     n_models = len(health.get("models", [])) if health else 0
-    st.metric("Models", n_models)
+    st.metric("Models", n_models, help="Trained model files on disk")
 
 st.divider()
 
